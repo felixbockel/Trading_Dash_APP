@@ -1,1 +1,2 @@
-web: gunicorn GUI_app.trading_data_plot.trading_data_app:app
+web: gunicorn trading_data_plot:app
+

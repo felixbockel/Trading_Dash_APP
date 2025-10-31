@@ -11,6 +11,7 @@ from dash import dash_table, callback, Dash, dcc, html, Input, Output, State, ct
 import dash_bootstrap_components as dbc
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+server = app.server  # expose the Flask server for Gunicorn
 app.title = "Pickle Plotter"  # 🔧 Renamed
 
 # === Utility Functions (kept for potential backward compatibility) ===
