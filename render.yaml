@@ -2,8 +2,9 @@ services:
   - type: web
     name: Trading_Uptrend_Tec
     env: python
+    runtime: python-3.12
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn GUI_app.trading_data_plot.trading_data_plot:server
-    pythonVersion: 3.11
+
 
