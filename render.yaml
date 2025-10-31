@@ -1,8 +1,9 @@
 services:
   - type: web
-    name: trading-dash-app
+    name: Trading_Uptrend_Tec
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:server
+    startCommand: gunicorn GUI_app.trading_data_plot.trading_data_plot:server
     pythonVersion: 3.11
+
