@@ -165,12 +165,13 @@ def load_pickle_from_button(n1, n2, n3, n4):
 
     try:
         df = read_pickle_from_dropbox(file_path)
+        uploaded_df = df.copy()  # <-- update global variable
     except Exception as e:
         return f"❌ Failed to load Pickle from Dropbox: {e}", [], [], ""
 
     print(f"🔍 Loading {file_path} from Dropbox via dropbox_utils...")
 
-    # ✅ Your existing DataTable / parsing logic stays unchanged from here ↓
+    display_df = df.copy()
     if 'plot_dict' in display_df.columns:
         display_df['plot_dict'] = display_df['plot_dict'].apply(
             lambda x: (str(x)[:100] + "..." if isinstance(x, (dict, str)) else str(x))
@@ -181,7 +182,9 @@ def load_pickle_from_button(n1, n2, n3, n4):
     columns = [{"name": col, "id": col} for col in visible_columns]
 
     strategy_type = 'swing' if 'swing' in triggered_id else 'positioning'
+    filename = os.path.basename(file_path)  # <-- fix filename
     return f"✅ Loaded: {filename}", columns, display_df.to_dict('records'), strategy_type
+
 
 
 # === Callback to plot selected row (unchanged) ===
