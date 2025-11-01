@@ -6,13 +6,27 @@ import math
 import re
 import os
 import json
+import dropbox
+import io
 
 from dash import dash_table, callback, Dash, dcc, html, Input, Output, State, ctx, dash_table
 import dash_bootstrap_components as dbc
+from dropbox_utils import read_pickle_from_dropbox
+
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server  # expose the Flask server for Gunicorn
 app.title = "Pickle Plotter"  # 🔧 Renamed
+
+# === Dropbox File Map (private access) ===
+FILE_MAP = {
+    "load-daily-swing": "/_daily_swing_records.pkl",
+    "load-weekly-swing": "/_weekly_swing_records.pkl",
+    "load-daily-positioning": "/_daily_positioning_records.pkl",
+    "load-weekly-positioning": "/_weekly_positioning_records.pkl",
+}
+
+
 
 # === Utility Functions (kept for potential backward compatibility) ===
 def clean_plot_dict_string(s):
@@ -145,40 +159,18 @@ def load_pickle_from_button(n1, n2, n3, n4):
     if not triggered_id:
         return "", [], [], ""
 
-    filename = FILE_MAP.get(triggered_id)
-    filepath = os.path.join(os.getcwd(), filename)
-
-    if not os.path.exists(filepath):
-        return f"❌ File not found: {filename}", [], [], ""
+    file_path = FILE_MAP.get(triggered_id)
+    if not file_path:
+        return "❌ No Dropbox file path configured.", [], [], ""
 
     try:
-        # 🔧 Load pickle instead of CSV
-        df = pd.read_pickle(filepath)
+        df = read_pickle_from_dropbox(file_path)
     except Exception as e:
-        return f"❌ Failed to load Pickle: {e}", [], [], ""
+        return f"❌ Failed to load Pickle from Dropbox: {e}", [], [], ""
 
-    # ✅ plot_dict is already a Python dict (no eval needed)
-    # ✅ Handle plot_dict as JSON string or dict (backward compatible)
-    if 'plot_dict' in df.columns:
-        def parse_plot_dict(val):
-            if isinstance(val, dict):
-                return val  # old format
-            elif isinstance(val, str):
-                try:
-                    return json.loads(val)
-                except Exception as e:
-                    print(f"⚠️ JSON decode failed: {e}")
-                    return None
-            else:
-                return None
-    
-        df['plot_dict'] = df['plot_dict'].apply(parse_plot_dict)
-    
-    uploaded_df = df.copy()
+    print(f"🔍 Loading {file_path} from Dropbox via dropbox_utils...")
 
-    # 👇 Prepare DataFrame for display
-    display_df = df.copy()
-
+    # ✅ Your existing DataTable / parsing logic stays unchanged from here ↓
     if 'plot_dict' in display_df.columns:
         display_df['plot_dict'] = display_df['plot_dict'].apply(
             lambda x: (str(x)[:100] + "..." if isinstance(x, (dict, str)) else str(x))
@@ -492,6 +484,10 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type, filename_display):
 # === Run App ===
 #if __name__ == "__main__":
 #    app.run(debug=True)
+if __name__ == "__main__":
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get("PORT", 8050)))
+
+
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get("PORT", 8050)))
 
