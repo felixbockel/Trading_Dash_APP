@@ -215,10 +215,30 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type, filename_display):
     
     if not isinstance(plot_data, dict):
         return html.Div("❌ 'plot_dict' is not a valid dictionary after decoding.")
-
+    
     try:
+        # --- Decode JSON if needed ---
+        if isinstance(plot_data, str):
+            plot_data = json.loads(plot_data)
+
+        # --- Ensure it's a dict-of-lists ---
+        if not isinstance(plot_data, dict):
+            return html.Div("❌ 'plot_dict' is not a valid dictionary after decoding.")
+
+        # --- Build DataFrame ---
         data = pd.DataFrame(plot_data)
-        data.index = pd.to_datetime(data.index)
+
+        # --- Use 'Date' as timeline ---
+        if 'Date' in data.columns:
+            # Convert to datetime and use as index
+            data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
+            data = data.dropna(subset=['Date'])  # drop any invalid dates
+            data = data.sort_values('Date')      # sort chronologically
+            data.set_index('Date', inplace=True)
+        else:
+            print("⚠️ 'Date' column missing — falling back to integer index.")
+            data.index = pd.RangeIndex(len(data))
+
     except Exception as e:
         return html.Div(f"❌ Failed to parse plot_dict: {e}")
 
