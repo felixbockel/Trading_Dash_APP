@@ -203,24 +203,56 @@ def load_pickle_from_button(n1, n2, n3, n4):
 )
 def plot_selected_row(n_clicks, selected_rows, strategy_type):
     global uploaded_df
-    if not selected_rows or uploaded_df.empty:
-        return html.Div("❗ Select a row to plot.")
+    if not n_clicks or not selected_rows or uploaded_df.empty:
+        return html.Div("❗ Select a row to plot after loading data.")
 
+    # --- Get selected ticker ---
     row = uploaded_df.iloc[selected_rows[0]]
-    ticker = row.get('Ticker', None)
-    if ticker is None:
-        return html.Div("❌ 'Ticker' column missing in data.")
+    ticker = row.get('Ticker')
+    if not ticker:
+        return html.Div("❌ Could not find 'Ticker' in selected row.")
 
-    match_row = uploaded_df[uploaded_df['Ticker'] == ticker]
+    # --- Determine which incl_plot file to load ---
+    incl_map = {
+        "swing": {
+            "daily": "/all_daily_swing_incl_plot.pkl",
+            "weekly": "/all_weekly_swing_incl_plot.pkl",
+        },
+        "positioning": {
+            "daily": "/all_daily_positioning_incl_plot.pkl",
+            "weekly": "/all_weekly_positioning_incl_plot.pkl",
+        }
+    }
+
+    # detect timeframe
+    timeframe = "weekly" if "weekly" in uploaded_df.columns[0].lower() or "weekly" in uploaded_df.columns[-1].lower() else "daily"
+    # better: infer from file loaded
+    timeframe = "weekly" if "weekly" in str(ctx.triggered_id or "").lower() else "daily"
+
+    incl_file = incl_map.get(strategy_type, {}).get(timeframe)
+    if not incl_file:
+        return html.Div("❌ Could not determine incl_plot file to load.")
+
+    # --- Load incl_plot pickle from Dropbox ---
+    try:
+        incl_df = read_pickle_from_dropbox(incl_file)
+    except Exception as e:
+        return html.Div(f"❌ Failed to load incl_plot pickle: {e}")
+
+    # --- Find ticker in incl_plot file ---
+    match_row = incl_df[incl_df['Ticker'] == ticker]
     if match_row.empty:
-        return html.Div(f"❌ Ticker '{ticker}' not found in data.")
+        return html.Div(f"❌ Ticker '{ticker}' not found in {incl_file}.")
 
-    plot_data = match_row.iloc[0]['plot_dict']
+    plot_data = match_row.iloc[0].get('plot_dict')
+    if plot_data is None:
+        return html.Div(f"❌ 'plot_dict' not found for {ticker} in incl_plot file.")
 
+    # --- Parse plot_dict safely ---
     try:
         if isinstance(plot_data, str):
             plot_data = json.loads(plot_data)
-        if not isinstance(plot_data, dict):
+        elif not isinstance(plot_data, dict):
             return html.Div("❌ 'plot_dict' is not a valid dictionary.")
         data = pd.DataFrame(plot_data)
         if 'Date' in data.columns:
@@ -230,32 +262,23 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type):
     except Exception as e:
         return html.Div(f"❌ Failed to parse plot_dict: {e}")
 
-    # Normalize possible signal columns
+    # --- Normalize signal columns ---
     for col in ['entry_buy_signal', 'entry_buy_signal2', 'trigger_sell_signal',
                 'is_earnings_date', 'is_earnings_warning']:
         if col in data.columns:
             data[col] = data[col].astype(bool)
 
-    # === Extract context for title ===
-    filename_lower = filename_display.lower()
-    timeframe = "Daily" if "daily" in filename_lower else "Weekly"
+    # --- Build figure (reuse your existing logic) ---
     plot_mode = "Swing" if strategy_type == "swing" else "Positioning"
-    # --- Detect ticker column robustly ---
-    possible_ticker_cols = ["ticker", "Ticker", "symbol", "Symbol", "TICKER", "SYMBOL"]
-    ticker = "Unknown"
-    for col in possible_ticker_cols:
-        if col in row.index:
-            ticker = str(row[col])
-            break
+    timeframe_label = "Daily" if "daily" in incl_file else "Weekly"
 
-    # === Build dynamic titles ===
     subplot_titles = (
-        f"{timeframe} {plot_mode} - {ticker}: Candlestick + MA(20/40) + Dynamic SLs"
+        f"{timeframe_label} {plot_mode} - {ticker}: Candlestick + MA(20/40) + Dynamic SLs"
         if plot_mode == "Swing"
-        else f"{timeframe} {plot_mode} - {ticker}: Candlestick Chart with Signals",
-        f"{timeframe} {plot_mode} - {ticker}: CCI (6) + MA(1)"
+        else f"{timeframe_label} {plot_mode} - {ticker}: Candlestick Chart with Signals",
+        f"{timeframe_label} {plot_mode} - {ticker}: CCI (6) + MA(1)"
         if plot_mode == "Swing"
-        else f"{timeframe} {plot_mode} - {ticker}: TIF"
+        else f"{timeframe_label} {plot_mode} - {ticker}: TIF"
     )
 
     # === PLOT LOGIC ===
