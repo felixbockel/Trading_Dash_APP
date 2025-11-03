@@ -90,7 +90,7 @@ app.layout = dbc.Container([
     html.Br(),
     html.Button("Plot Selected Row", id='plot-button', n_clicks=0),
     html.Div(id='plot-output'),
-    dcc.Store(id='strategy-type')
+    dcc.Store(id='strategy-type'),
     dcc.Store(id='last-loaded-file-key')
 ])
 
