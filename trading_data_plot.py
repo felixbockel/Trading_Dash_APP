@@ -15,20 +15,18 @@ from dropbox_utils import read_pickle_from_dropbox
 
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-server = app.server  # expose the Flask server for Gunicorn
-app.title = "Pickle Plotter"  # 🔧 Renamed
+server = app.server
+app.title = "Pickle Plotter"
 
-# === Dropbox File Map (private access) ===
+# === Dropbox File Map (new naming) ===
 FILE_MAP = {
-    "load-daily-swing": "/_daily_swing_records.pkl",
-    "load-weekly-swing": "/_weekly_swing_records.pkl",
-    "load-daily-positioning": "/_daily_positioning_records.pkl",
-    "load-weekly-positioning": "/_weekly_positioning_records.pkl",
+    "load-daily-swing": "/all_daily_swing_incl_plot.pkl",
+    "load-weekly-swing": "/all_weekly_swing_incl_plot.pkl",
+    "load-daily-positioning": "/all_daily_positioning_incl_plot.pkl",
+    "load-weekly-positioning": "/all_weekly_positioning_incl_plot.pkl",
 }
 
-
-
-# === Utility Functions (kept for potential backward compatibility) ===
+# === Utility Functions ===
 def clean_plot_dict_string(s):
     s = re.sub(r"Timestamp\('([^']+)'\)", r"'\1'", s)
     s = re.sub(r"Timestamp\(\"([^\"]+)\"\)", r'"\1"', s)
@@ -44,15 +42,16 @@ def safe_literal_eval(val):
         print(f"Eval error: {e}")
         return None
 
+
 # === Layout ===
 app.layout = dbc.Container([
-    html.H2("📈 Pickle Viewer & Strategy Plotter"),  # 🔧 updated title
-    
+    html.H2("📈 Pickle Viewer & Strategy Plotter"),
+
     dbc.Row([
-        dbc.Col(dbc.Button("📅 Daily Swing Strategy", id="load-daily-swing", color="primary", className="me-2", n_clicks=0)),
-        dbc.Col(dbc.Button("🗓️ Weekly Swing Strategy", id="load-weekly-swing", color="secondary", className="me-2", n_clicks=0)),
-        dbc.Col(dbc.Button("📅 Daily Positioning Strategy", id="load-daily-positioning", color="success", className="me-2", n_clicks=0)),
-        dbc.Col(dbc.Button("🗓️ Weekly Positioning Strategy", id="load-weekly-positioning", color="warning", className="me-2", n_clicks=0)),
+        dbc.Col(dbc.Button("📅 Daily Swing Strategy", id="load-daily-swing", color="primary", className="me-2")),
+        dbc.Col(dbc.Button("🗓️ Weekly Swing Strategy", id="load-weekly-swing", color="secondary", className="me-2")),
+        dbc.Col(dbc.Button("📅 Daily Positioning Strategy", id="load-daily-positioning", color="success", className="me-2")),
+        dbc.Col(dbc.Button("🗓️ Weekly Positioning Strategy", id="load-weekly-positioning", color="warning", className="me-2")),
     ], className="mb-3"),
 
     html.Div(id='filename-display', style={"color": "gray", "marginBottom": "10px"}),
@@ -91,14 +90,12 @@ app.layout = dbc.Container([
     html.Br(),
     html.Button("Plot Selected Row", id='plot-button', n_clicks=0),
     html.Div(id='plot-output'),
-    
     dcc.Store(id='strategy-type')
 ])
 
-# === Global Store ===
 uploaded_df = pd.DataFrame()
 
-# === Callback: Sync active_cell to selected_rows ===
+# === Sync cell click to row selection ===
 @app.callback(
     Output('data-table', 'selected_rows'),
     Input('data-table', 'active_cell'),
@@ -108,7 +105,7 @@ def select_row_on_cell_click(active_cell):
         return [active_cell['row']]
     return []
 
-# === Callback: mark sorted column header(s) ===
+# === Highlight sorted columns ===
 @app.callback(
     Output('data-table', 'style_data_conditional'),
     Input('data-table', 'sort_by')
@@ -142,7 +139,7 @@ def update_sorted_column_highlight(sort_by):
     return style
 
 
-# === 🔧 Callback to load pickle files ===
+# === Load Pickle on Button Click ===
 @app.callback(
     Output('filename-display', 'children'),
     Output('data-table', 'columns'),
@@ -165,16 +162,15 @@ def load_pickle_from_button(n1, n2, n3, n4):
 
     try:
         df = read_pickle_from_dropbox(file_path)
-        uploaded_df = df.copy()  # <-- update global variable
+        uploaded_df = df.copy()
     except Exception as e:
         return f"❌ Failed to load Pickle from Dropbox: {e}", [], [], ""
 
-    print(f"🔍 Loading {file_path} from Dropbox via dropbox_utils...")
-
     display_df = df.copy()
+    # truncate large plot_dict for display only
     if 'plot_dict' in display_df.columns:
         display_df['plot_dict'] = display_df['plot_dict'].apply(
-            lambda x: (str(x)[:100] + "..." if isinstance(x, (dict, str)) else str(x))
+            lambda x: (str(x)[:80] + "...") if isinstance(x, (dict, str)) else str(x)
         )
 
     columns_to_hide = ['Unnamed: 0', 'plot_dict']
@@ -182,63 +178,43 @@ def load_pickle_from_button(n1, n2, n3, n4):
     columns = [{"name": col, "id": col} for col in visible_columns]
 
     strategy_type = 'swing' if 'swing' in triggered_id else 'positioning'
-    filename = os.path.basename(file_path)  # <-- fix filename
+    filename = os.path.basename(file_path)
     return f"✅ Loaded: {filename}", columns, display_df.to_dict('records'), strategy_type
 
 
-
-# === Callback to plot selected row (unchanged) ===
+# === Plot Callback ===
 @app.callback(
     Output('plot-output', 'children'),
     Input('plot-button', 'n_clicks'),
     State('data-table', 'selected_rows'),
     State('strategy-type', 'data'),
-    State('filename-display', 'children'),
 )
-def plot_selected_row(n_clicks, selected_rows, strategy_type, filename_display):
+def plot_selected_row(n_clicks, selected_rows, strategy_type):
     global uploaded_df
-
     if not selected_rows or uploaded_df.empty:
         return html.Div("❗ Select a row to plot.")
 
-    idx = selected_rows[0]
-    row = uploaded_df.iloc[idx]
-    
-    plot_data = row['plot_dict']
+    row = uploaded_df.iloc[selected_rows[0]]
+    ticker = row.get('Ticker', None)
+    if ticker is None:
+        return html.Div("❌ 'Ticker' column missing in data.")
 
-    # --- decode JSON if necessary ---
-    if isinstance(plot_data, str):
-        try:
-            plot_data = json.loads(plot_data)
-        except Exception as e:
-            return html.Div(f"❌ Failed to decode plot_dict JSON: {e}")
-    
-    if not isinstance(plot_data, dict):
-        return html.Div("❌ 'plot_dict' is not a valid dictionary after decoding.")
-    
+    match_row = uploaded_df[uploaded_df['Ticker'] == ticker]
+    if match_row.empty:
+        return html.Div(f"❌ Ticker '{ticker}' not found in data.")
+
+    plot_data = match_row.iloc[0]['plot_dict']
+
     try:
-        # --- Decode JSON if needed ---
         if isinstance(plot_data, str):
             plot_data = json.loads(plot_data)
-
-        # --- Ensure it's a dict-of-lists ---
         if not isinstance(plot_data, dict):
-            return html.Div("❌ 'plot_dict' is not a valid dictionary after decoding.")
-
-        # --- Build DataFrame ---
+            return html.Div("❌ 'plot_dict' is not a valid dictionary.")
         data = pd.DataFrame(plot_data)
-
-        # --- Use 'Date' as timeline ---
         if 'Date' in data.columns:
-            # Convert to datetime and use as index
             data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
-            data = data.dropna(subset=['Date'])  # drop any invalid dates
-            data = data.sort_values('Date')      # sort chronologically
+            data = data.dropna(subset=['Date']).sort_values('Date')
             data.set_index('Date', inplace=True)
-        else:
-            print("⚠️ 'Date' column missing — falling back to integer index.")
-            data.index = pd.RangeIndex(len(data))
-
     except Exception as e:
         return html.Div(f"❌ Failed to parse plot_dict: {e}")
 
@@ -502,11 +478,7 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type, filename_display):
 
     return dcc.Graph(figure=fig)
 
-
-
 # === Run App ===
-#if __name__ == "__main__":
-#    app.run(debug=True)
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get("PORT", 8050)))
 
