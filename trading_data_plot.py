@@ -262,6 +262,16 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type, last_loaded_key):
     # --- Labels ---
     plot_mode = "Swing" if strategy_type == "swing" else "Positioning"
     timeframe_label = "Daily" if "daily" in last_loaded_key else "Weekly"
+    timeframe = timeframe_label  # for title text consistency
+
+    subplot_titles = (
+        [f"{timeframe_label} {plot_mode} - {ticker}: Candlestick + MA(20/40) + Dynamic SLs",
+         f"{timeframe_label} {plot_mode} - {ticker}: CCI (6) + MA(1)"]
+        if plot_mode == "Swing"
+        else [f"{timeframe_label} {plot_mode} - {ticker}: Candlestick Chart with Signals",
+              f"{timeframe_label} {plot_mode} - {ticker}: TIF"]
+    )
+
 
     # === PLOT LOGIC ===
     if strategy_type == 'swing':
