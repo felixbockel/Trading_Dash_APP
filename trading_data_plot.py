@@ -156,6 +156,14 @@ def load_pickle_from_button(n1, n2, n3, n4):
     if not triggered_id:
         return "", [], [], ""
 
+    # === Use excl_plot files now ===
+    FILE_MAP = {
+        "load-daily-swing": "/all_daily_swing_excl_plot.pkl",
+        "load-weekly-swing": "/all_weekly_swing_excl_plot.pkl",
+        "load-daily-positioning": "/all_daily_positioning_excl_plot.pkl",
+        "load-weekly-positioning": "/all_weekly_positioning_excl_plot.pkl",
+    }
+
     file_path = FILE_MAP.get(triggered_id)
     if not file_path:
         return "❌ No Dropbox file path configured.", [], [], ""
@@ -166,20 +174,24 @@ def load_pickle_from_button(n1, n2, n3, n4):
     except Exception as e:
         return f"❌ Failed to load Pickle from Dropbox: {e}", [], [], ""
 
-    display_df = df.copy()
-    # truncate large plot_dict for display only
-    if 'plot_dict' in display_df.columns:
-        display_df['plot_dict'] = display_df['plot_dict'].apply(
-            lambda x: (str(x)[:80] + "...") if isinstance(x, (dict, str)) else str(x)
-        )
+    print(f"🔍 Loaded file: {file_path}")
 
-    columns_to_hide = ['Unnamed: 0', 'plot_dict']
-    visible_columns = [col for col in display_df.columns if col not in columns_to_hide]
+    display_df = df.copy()
+
+    # ✅ Show all columns from excl_plot file
+    visible_columns = [col for col in display_df.columns]
     columns = [{"name": col, "id": col} for col in visible_columns]
 
     strategy_type = 'swing' if 'swing' in triggered_id else 'positioning'
     filename = os.path.basename(file_path)
-    return f"✅ Loaded: {filename}", columns, display_df.to_dict('records'), strategy_type
+
+    return (
+        f"✅ Loaded: {filename}",
+        columns,
+        display_df.to_dict('records'),
+        strategy_type
+    )
+
 
 
 # === Plot Callback ===
