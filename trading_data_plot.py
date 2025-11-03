@@ -91,6 +91,7 @@ app.layout = dbc.Container([
     html.Button("Plot Selected Row", id='plot-button', n_clicks=0),
     html.Div(id='plot-output'),
     dcc.Store(id='strategy-type')
+    dcc.Store(id='last-loaded-file-key')
 ])
 
 uploaded_df = pd.DataFrame()
@@ -145,6 +146,7 @@ def update_sorted_column_highlight(sort_by):
     Output('data-table', 'columns'),
     Output('data-table', 'data'),
     Output('strategy-type', 'data'),
+    Output('last-loaded-file-key', 'data'),
     Input("load-daily-swing", "n_clicks"),
     Input("load-weekly-swing", "n_clicks"),
     Input("load-daily-positioning", "n_clicks"),
@@ -154,9 +156,9 @@ def load_pickle_from_button(n1, n2, n3, n4):
     global uploaded_df
     triggered_id = ctx.triggered_id
     if not triggered_id:
-        return "", [], [], ""
+        return "", [], [], "", ""
 
-    # === Use excl_plot files now ===
+    # === Use excl_plot files ===
     FILE_MAP = {
         "load-daily-swing": "/all_daily_swing_excl_plot.pkl",
         "load-weekly-swing": "/all_weekly_swing_excl_plot.pkl",
@@ -166,20 +168,18 @@ def load_pickle_from_button(n1, n2, n3, n4):
 
     file_path = FILE_MAP.get(triggered_id)
     if not file_path:
-        return "❌ No Dropbox file path configured.", [], [], ""
+        return "❌ No Dropbox file path configured.", [], [], "", ""
 
     try:
         df = read_pickle_from_dropbox(file_path)
         uploaded_df = df.copy()
     except Exception as e:
-        return f"❌ Failed to load Pickle from Dropbox: {e}", [], [], ""
-
-    print(f"🔍 Loaded file: {file_path}")
+        return f"❌ Failed to load Pickle from Dropbox: {e}", [], [], "", ""
 
     display_df = df.copy()
 
-    # ✅ Show all columns from excl_plot file
-    visible_columns = [col for col in display_df.columns]
+    # Show all columns
+    visible_columns = list(display_df.columns)
     columns = [{"name": col, "id": col} for col in visible_columns]
 
     strategy_type = 'swing' if 'swing' in triggered_id else 'positioning'
@@ -189,10 +189,9 @@ def load_pickle_from_button(n1, n2, n3, n4):
         f"✅ Loaded: {filename}",
         columns,
         display_df.to_dict('records'),
-        strategy_type
+        strategy_type,
+        triggered_id  # 👈 store which button was pressed
     )
-
-
 
 # === Plot Callback ===
 @app.callback(
@@ -200,8 +199,9 @@ def load_pickle_from_button(n1, n2, n3, n4):
     Input('plot-button', 'n_clicks'),
     State('data-table', 'selected_rows'),
     State('strategy-type', 'data'),
+    State('last-loaded-file-key', 'data'),
 )
-def plot_selected_row(n_clicks, selected_rows, strategy_type):
+def plot_selected_row(n_clicks, selected_rows, strategy_type, last_loaded_key):
     global uploaded_df
     if not n_clicks or not selected_rows or uploaded_df.empty:
         return html.Div("❗ Select a row to plot after loading data.")
@@ -212,26 +212,17 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type):
     if not ticker:
         return html.Div("❌ Could not find 'Ticker' in selected row.")
 
-    # --- Determine which incl_plot file to load ---
+    # --- Determine matching incl_plot file based on last_loaded_key ---
     incl_map = {
-        "swing": {
-            "daily": "/all_daily_swing_incl_plot.pkl",
-            "weekly": "/all_weekly_swing_incl_plot.pkl",
-        },
-        "positioning": {
-            "daily": "/all_daily_positioning_incl_plot.pkl",
-            "weekly": "/all_weekly_positioning_incl_plot.pkl",
-        }
+        "load-daily-swing": "/all_daily_swing_incl_plot.pkl",
+        "load-weekly-swing": "/all_weekly_swing_incl_plot.pkl",
+        "load-daily-positioning": "/all_daily_positioning_incl_plot.pkl",
+        "load-weekly-positioning": "/all_weekly_positioning_incl_plot.pkl",
     }
 
-    # detect timeframe
-    timeframe = "weekly" if "weekly" in uploaded_df.columns[0].lower() or "weekly" in uploaded_df.columns[-1].lower() else "daily"
-    # better: infer from file loaded
-    timeframe = "weekly" if "weekly" in str(ctx.triggered_id or "").lower() else "daily"
-
-    incl_file = incl_map.get(strategy_type, {}).get(timeframe)
+    incl_file = incl_map.get(last_loaded_key)
     if not incl_file:
-        return html.Div("❌ Could not determine incl_plot file to load.")
+        return html.Div("❌ Could not determine which incl_plot file to load.")
 
     # --- Load incl_plot pickle from Dropbox ---
     try:
@@ -262,24 +253,15 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type):
     except Exception as e:
         return html.Div(f"❌ Failed to parse plot_dict: {e}")
 
-    # --- Normalize signal columns ---
+    # Normalize possible signal columns
     for col in ['entry_buy_signal', 'entry_buy_signal2', 'trigger_sell_signal',
                 'is_earnings_date', 'is_earnings_warning']:
         if col in data.columns:
             data[col] = data[col].astype(bool)
 
-    # --- Build figure (reuse your existing logic) ---
+    # --- Labels ---
     plot_mode = "Swing" if strategy_type == "swing" else "Positioning"
-    timeframe_label = "Daily" if "daily" in incl_file else "Weekly"
-
-    subplot_titles = (
-        f"{timeframe_label} {plot_mode} - {ticker}: Candlestick + MA(20/40) + Dynamic SLs"
-        if plot_mode == "Swing"
-        else f"{timeframe_label} {plot_mode} - {ticker}: Candlestick Chart with Signals",
-        f"{timeframe_label} {plot_mode} - {ticker}: CCI (6) + MA(1)"
-        if plot_mode == "Swing"
-        else f"{timeframe_label} {plot_mode} - {ticker}: TIF"
-    )
+    timeframe_label = "Daily" if "daily" in last_loaded_key else "Weekly"
 
     # === PLOT LOGIC ===
     if strategy_type == 'swing':
@@ -514,10 +496,6 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type):
     return dcc.Graph(figure=fig)
 
 # === Run App ===
-if __name__ == "__main__":
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get("PORT", 8050)))
-
-
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get("PORT", 8050)))
 
