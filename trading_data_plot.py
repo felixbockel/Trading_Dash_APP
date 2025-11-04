@@ -229,14 +229,16 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type, last_loaded_key):
     
     # --- Load ticker pickle from Dropbox ---
     try:
-        plot_json = read_pickle_from_dropbox(ticker_file)
+        plot_dict = read_pickle_from_dropbox(ticker_file)  # this returns a DataFrame or dict
     except Exception as e:
         return html.Div(f"❌ Failed to load '{ticker}.pkl' from Dropbox: {e}")
     
-    # --- Parse JSON string into dictionary ---
+    # --- Convert to DataFrame if needed ---
     try:
-        plot_dict = json.loads(plot_json)  # plot_dict is now a dict
-        data = pd.DataFrame(plot_dict)
+        if isinstance(plot_dict, pd.DataFrame):
+            data = plot_dict.copy()
+        else:
+            data = pd.DataFrame(plot_dict)
     
         # --- Timeline logic ---
         if 'Date' in data.columns:
@@ -246,7 +248,6 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type, last_loaded_key):
     
     except Exception as e:
         return html.Div(f"❌ Failed to parse plot_dict for ticker '{ticker}': {e}")
-
 
     # Normalize possible signal columns
     for col in ['entry_buy_signal', 'entry_buy_signal2', 'trigger_sell_signal',
