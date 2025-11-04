@@ -270,15 +270,94 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type, last_loaded_key):
 
     
     # === PLOT LOGIC ===
-    if strategy_type == 'swing':
-        # --- Plot for Swing Strategies ---
-        fig = make_subplots(
-            rows=2, cols=1, shared_xaxes=True,
-            vertical_spacing=0.1, row_heights=[0.7, 0.3],
-            subplot_titles=subplot_titles
-        )
+@app.callback(
+    Output('plot-output', 'children'),
+    Input('plot-button', 'n_clicks'),
+    State('data-table', 'selected_rows'),
+    State('strategy-type', 'data'),
+    State('last-loaded-file-key', 'data'),
+)
+def plot_selected_row_safe(n_clicks, selected_rows, strategy_type, last_loaded_key):
+    global uploaded_df
 
-        # --- Candlestick ---
+    if not n_clicks or not selected_rows or uploaded_df.empty:
+        return html.Div("❗ Select a row to plot after loading data.")
+
+    # --- Get selected ticker ---
+    row = uploaded_df.iloc[selected_rows[0]]
+    ticker = row.get('Ticker')
+    if not ticker:
+        return html.Div("❌ Could not find 'Ticker' in selected row.")
+
+    # --- Determine incl_plot folder ---
+    incl_folder_map = {
+        "load-daily-swing": "/all_daily_swing_incl_plot/",
+        "load-weekly-swing": "/all_weekly_swing_incl_plot/",
+        "load-daily-positioning": "/all_daily_positioning_incl_plot/",
+        "load-weekly-positioning": "/all_weekly_positioning_incl_plot/",
+    }
+    incl_folder = incl_folder_map.get(last_loaded_key)
+    if not incl_folder:
+        return html.Div("❌ Could not determine incl_plot folder.")
+
+    ticker_file = f"{incl_folder}{ticker}.pkl"
+
+    # --- Load ticker pickle ---
+    try:
+        plot_data = read_pickle_from_dropbox(ticker_file)
+    except Exception as e:
+        return html.Div(f"❌ Failed to load '{ticker}.pkl': {e}")
+
+    # --- Convert to DataFrame if needed ---
+    if isinstance(plot_data, pd.DataFrame):
+        data = plot_data.copy()
+    elif isinstance(plot_data, dict):
+        try:
+            data = pd.DataFrame(plot_data)
+        except Exception as e:
+            return html.Div(f"❌ Failed to convert dict to DataFrame: {e}")
+    else:
+        return html.Div(f"❌ Unsupported plot data type: {type(plot_data)}")
+
+    # --- Normalize Date index ---
+    if 'Date' in data.columns:
+        data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
+        data = data.dropna(subset=['Date']).sort_values('Date')
+        data.set_index('Date', inplace=True)
+
+    # --- Convert optional boolean signals ---
+    for col in ['entry_buy_signal', 'entry_buy_signal2', 'trigger_sell_signal',
+                'Entry_Buy_Signal', 'Entry_Buy_Signal2', 'Trigger_Sell_Signal',
+                'is_earnings_date', 'is_earnings_warning']:
+        if col in data.columns:
+            data[col] = data[col].astype(bool)
+
+    # --- Labels ---
+    plot_mode = "Swing" if strategy_type == "swing" else "Positioning"
+    timeframe_label = "Daily" if "daily" in last_loaded_key else "Weekly"
+
+    # --- Subplot titles ---
+    if plot_mode == "Swing":
+        subplot_titles = [
+            f"{timeframe_label} Swing - {ticker}: Candlestick + MA + Dynamic SLs",
+            f"{timeframe_label} Swing - {ticker}: CCI + MA"
+        ]
+        row_heights = [0.7, 0.3]
+    else:
+        subplot_titles = [
+            f"{timeframe_label} Positioning - {ticker}: Candlestick + Signals",
+            f"{timeframe_label} Positioning - {ticker}: TIF"
+        ]
+        row_heights = [0.5, 0.3]
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        vertical_spacing=0.1, row_heights=row_heights,
+        subplot_titles=subplot_titles
+    )
+
+    # --- Candlestick (always present) ---
+    if all(c in data.columns for c in ['Open', 'High', 'Low', 'Close']):
         fig.add_trace(go.Candlestick(
             x=data.index,
             open=data['Open'],
@@ -289,31 +368,29 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type, last_loaded_key):
             increasing_line_color='grey',
             decreasing_line_color='black'
         ), row=1, col=1)
+    else:
+        return html.Div("❌ Missing OHLC columns for candlestick plot.")
 
-        # --- MA lines ---
-        if 'MA20' in data.columns:
-            fig.add_trace(go.Scatter(
-                x=data.index, y=data['MA20'], mode='lines',
-                name='MA 20', line=dict(color='red', width=1.5)
-            ), row=1, col=1)
+    # --- Swing branch ---
+    if plot_mode == "Swing":
+        # MA lines
+        for ma_col, color in [('MA20', 'red'), ('MA40', 'blue')]:
+            if ma_col in data.columns:
+                fig.add_trace(go.Scatter(
+                    x=data.index, y=data[ma_col], mode='lines',
+                    name=ma_col, line=dict(color=color, width=1.5)
+                ), row=1, col=1)
 
-        if 'MA40' in data.columns:
-            fig.add_trace(go.Scatter(
-                x=data.index, y=data['MA40'], mode='lines',
-                name='MA 40', line=dict(color='blue', width=1.5)
-            ), row=1, col=1)
-
-        # --- Dynamic SLs ---
-        sl_lines = {
-            'SL 1x Lower': 'Dyn_SL_1x_Lower',
-            'SL 2x Lower': 'Dyn_SL_2x_Lower',
-            'SL 1x Upper': 'Dyn_SL_1x_Upper',
-            'SL 2x Upper': 'Dyn_SL_2x_Upper',
-            'Trailing SL 1x': 'Dyn_Trail_SL_1x',
-            'Trailing SL 2x': 'Dyn_Trail_SL_2x'
+        # Dynamic SLs
+        sl_cols = {
+            'Dyn_SL_1x_Lower': 'SL 1x Lower',
+            'Dyn_SL_2x_Lower': 'SL 2x Lower',
+            'Dyn_SL_1x_Upper': 'SL 1x Upper',
+            'Dyn_SL_2x_Upper': 'SL 2x Upper',
+            'Dyn_Trail_SL_1x': 'Trailing SL 1x',
+            'Dyn_Trail_SL_2x': 'Trailing SL 2x'
         }
-
-        for name, col in sl_lines.items():
+        for col, name in sl_cols.items():
             if col in data.columns:
                 fig.add_trace(go.Scatter(
                     x=data.index, y=data[col], mode='lines',
@@ -321,185 +398,92 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type, last_loaded_key):
                     visible='legendonly'
                 ), row=1, col=1)
 
-        # --- Entry Signals ---
-        entry_signals = {
-            'Entry_Buy_Signal': ('Entry_Buy_Price', 'green'),
-            'Entry_Buy_Signal2': ('Entry_Buy_Price2', 'purple')
-        }
-        for name, (price_col, color) in entry_signals.items():
-            if price_col in data.columns and name in data.columns:
+        # Entry / Sell Signals
+        signal_cols = [
+            ('Entry_Buy_Signal', 'Entry_Buy_Price', 'green'),
+            ('Entry_Buy_Signal2', 'Entry_Buy_Price2', 'purple'),
+            ('Trigger_Sell_Signal', 'Trigger_Sell_Price', 'red')
+        ]
+        for sig_col, price_col, color in signal_cols:
+            if sig_col in data.columns and price_col in data.columns and data[sig_col].any():
                 fig.add_trace(go.Scatter(
-                    x=data.index[data[name]],
-                    y=data[price_col][data[name]],
+                    x=data.index[data[sig_col]],
+                    y=data[price_col][data[sig_col]],
                     mode='markers',
-                    marker=dict(symbol='triangle-up', color=color, size=10),
-                    name=name
+                    marker=dict(symbol='triangle-up' if 'Entry' in sig_col else 'triangle-down', color=color, size=10),
+                    name=sig_col
                 ), row=1, col=1)
 
-        # --- Trigger Sell Signal ---
-        if 'Trigger_Sell_Signal' in data.columns and 'Trigger_Sell_Price' in data.columns:
-            fig.add_trace(go.Scatter(
-                x=data.index[data['Trigger_Sell_Signal']],
-                y=data['Trigger_Sell_Price'][data['Trigger_Sell_Signal']],
-                mode='markers',
-                marker=dict(symbol='triangle-down', color='red', size=10),
-                name='Trigger_Sell_Signal'
-            ), row=1, col=1)
+        # CCI
+        for col, color, visible in [('CCI', 'blue', True), ('CCI_MA', 'orange', 'legendonly')]:
+            if col in data.columns:
+                fig.add_trace(go.Scatter(
+                    x=data.index, y=data[col], mode='lines',
+                    line=dict(color=color, dash='dot' if col.endswith('MA') else None),
+                    name=col,
+                    visible=visible
+                ), row=2, col=1)
 
-        # --- CCI ---
-        if 'CCI' in data.columns:
-            fig.add_trace(go.Scatter(
-                x=data.index, y=data['CCI'], mode='lines',
-                name='CCI (6)', line=dict(color='blue')
-            ), row=2, col=1)
-
-        if 'CCI_MA' in data.columns:
-            fig.add_trace(go.Scatter(
-                x=data.index, y=data['CCI_MA'], mode='lines',
-                name='CCI MA (1)', line=dict(color='orange', dash='dot'),
-                visible='legendonly'
-            ), row=2, col=1)
-
-        # --- Reference Lines ---
+        # Reference lines
         fig.add_hline(y=100, line_dash='dash', line_color='green', row=2, col=1)
         fig.add_hline(y=0, line_color='black', row=2, col=1)
         fig.add_hline(y=-100, line_dash='dash', line_color='red', row=2, col=1)
 
-        # --- Earnings ---
-        if 'is_earnings_date' in data.columns:
-            fig.add_trace(go.Scatter(
-                x=data.index[data['is_earnings_date']],
-                y=data['High'][data['is_earnings_date']] * 1.01,
-                mode='markers+text',
-                name='Earnings',
-                text=['E'] * data['is_earnings_date'].sum(),
-                textposition='top center',
-                marker=dict(symbol='star', size=12, color='purple')
-            ), row=1, col=1)
+        # Earnings markers
+        for col, sym, mult, name in [('is_earnings_date', 'star', 1.01, 'Earnings'),
+                                     ('is_earnings_warning', 'diamond', 1.02, 'Earnings Ahead')]:
+            if col in data.columns and data[col].any() and 'High' in data.columns:
+                fig.add_trace(go.Scatter(
+                    x=data.index[data[col]],
+                    y=data['High'][data[col]] * mult,
+                    mode='markers+text',
+                    text=['E' if sym=='star' else '⚠️'] * data[col].sum(),
+                    textposition='top center',
+                    marker=dict(symbol=sym, size=12, color='purple' if sym=='star' else 'orange'),
+                    name=name
+                ), row=1, col=1)
 
-        if 'is_earnings_warning' in data.columns:
-            fig.add_trace(go.Scatter(
-                x=data.index[data['is_earnings_warning']],
-                y=data['High'][data['is_earnings_warning']] * 1.02,
-                mode='markers+text',
-                name='Earnings Ahead',
-                text=['⚠️'] * data['is_earnings_warning'].sum(),
-                textposition='top center',
-                marker=dict(symbol='diamond', size=10, color='orange')
-            ), row=1, col=1)
-
-        # --- Layout ---
-        fig.update_layout(
-            height=750, width=1000,
-            title_text=f"📊 {timeframe} {plot_mode} Strategy — {ticker}",
-            xaxis_rangeslider_visible=False,
-            template='plotly_white',
-        )
-
+    # --- Positioning branch ---
     else:
-        # --- Positioning Plot ---
-        fig = make_subplots(
-            rows=2, cols=1, shared_xaxes=True,
-            vertical_spacing=0.1, row_heights=[0.5, 0.3],
-            subplot_titles=subplot_titles
-        )
+        # Plot Buy/Sell context candles safely
+        for signal_type, color, label in [('buy', 'blue', 'Buy Context'), ('sell', 'red', 'Sell Context')]:
+            mask = (data.get('signal_type') == signal_type) if 'signal_type' in data.columns else pd.Series(False, index=data.index)
+            if mask.any() and all(c in data.columns for c in ['Open', 'High', 'Low', 'Close']):
+                fig.add_trace(go.Candlestick(
+                    x=data.index[mask],
+                    open=data.loc[mask, 'Open'],
+                    high=data.loc[mask, 'High'],
+                    low=data.loc[mask, 'Low'],
+                    close=data.loc[mask, 'Close'],
+                    increasing_line_color=color,
+                    decreasing_line_color=color,
+                    name=label
+                ), row=1, col=1)
 
-        # --- Context Candles ---
-        fig.add_trace(go.Candlestick(
-            x=data[data['signal_type'] == 'buy'].index,
-            open=data[data['signal_type'] == 'buy']['Open'],
-            high=data[data['signal_type'] == 'buy']['High'],
-            low=data[data['signal_type'] == 'buy']['Low'],
-            close=data[data['signal_type'] == 'buy']['Close'],
-            increasing_line_color='blue',
-            decreasing_line_color='blue',
-            name='Buy Context'
-        ), row=1, col=1)
-
-        fig.add_trace(go.Candlestick(
-            x=data[data['signal_type'] == 'sell'].index,
-            open=data[data['signal_type'] == 'sell']['Open'],
-            high=data[data['signal_type'] == 'sell']['High'],
-            low=data[data['signal_type'] == 'sell']['Low'],
-            close=data[data['signal_type'] == 'sell']['Close'],
-            increasing_line_color='red',
-            decreasing_line_color='red',
-            name='Sell Context'
-        ), row=1, col=1)
-
-        # --- SMA ---
+        # SMA
         if 'SMA' in data.columns:
             fig.add_trace(go.Scatter(
                 x=data.index, y=data['SMA'], mode='lines',
-                line=dict(color='orange', width=1), name='SMA 40'
+                line=dict(color='orange', width=1), name='SMA'
             ), row=1, col=1)
 
-        # --- Entry / Sell Signals ---
-        if 'entry_buy_signal' in data.columns:
+        # TIF subplot
+        if 'TIF' in data.columns:
             fig.add_trace(go.Scatter(
-                x=data.index[data['entry_buy_signal']],
-                y=data['Low'][data['entry_buy_signal']] * 0.995,
-                mode='markers',
-                marker=dict(color='green', size=10, symbol='triangle-up'),
-                name='Entry Buy Signal'
-            ), row=1, col=1)
-
-        if 'entry_buy_signal2' in data.columns:
-            fig.add_trace(go.Scatter(
-                x=data.index[data['entry_buy_signal2']],
-                y=data['Low'][data['entry_buy_signal2']] * 0.995,
-                mode='markers',
-                marker=dict(color='purple', size=10, symbol='triangle-up'),
-                name='Entry Buy Signal 2'
-            ), row=1, col=1)
-
-        if 'trigger_sell_signal' in data.columns:
-            fig.add_trace(go.Scatter(
-                x=data.index[data['trigger_sell_signal']],
-                y=data['High'][data['trigger_sell_signal']] * 1.005,
-                mode='markers',
-                marker=dict(color='red', size=10, symbol='triangle-down'),
-                name='Trigger Sell Signal'
-            ), row=1, col=1)
-
-        # --- TIF ---
-        if 'TIF' in data.columns and 'TIF_color' in data.columns:
-            fig.add_trace(go.Bar(
-                x=data.index, y=data['TIF'], marker_color=data['TIF_color'], name='TIF'
+                x=data.index, y=data['TIF'], mode='lines',
+                line=dict(color='green', width=1), name='TIF'
             ), row=2, col=1)
 
-        # --- Earnings ---
-        if 'is_earnings_date' in data.columns:
-            fig.add_trace(go.Scatter(
-                x=data.index[data['is_earnings_date']],
-                y=data['High'][data['is_earnings_date']] * 1.01,
-                mode='markers+text',
-                name='Earnings',
-                text=['E'] * data['is_earnings_date'].sum(),
-                textposition='top center',
-                marker=dict(symbol='star', size=12, color='purple')
-            ), row=1, col=1)
-
-        if 'is_earnings_warning' in data.columns:
-            fig.add_trace(go.Scatter(
-                x=data.index[data['is_earnings_warning']],
-                y=data['High'][data['is_earnings_warning']] * 1.02,
-                mode='markers+text',
-                name='Earnings Ahead',
-                text=['⚠️'] * data['is_earnings_warning'].sum(),
-                textposition='top center',
-                marker=dict(symbol='diamond', size=10, color='orange')
-            ), row=1, col=1)
-
-        # --- Layout ---
-        fig.update_layout(
-            height=900,
-            title=f"📊 {timeframe} {plot_mode} Strategy — {ticker}",
-            xaxis_rangeslider_visible=False,
-            template='plotly_white',
-        )
+    # --- Layout tweaks ---
+    fig.update_layout(
+        height=700, width=1000,
+        title_text=f"{plot_mode} Plot for {ticker}",
+        xaxis_rangeslider_visible=False,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
 
     return dcc.Graph(figure=fig)
+
 
 # === Run App ===
 if __name__ == "__main__":
