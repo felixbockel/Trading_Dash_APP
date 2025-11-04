@@ -229,24 +229,21 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type, last_loaded_key):
     
     # --- Load ticker pickle from Dropbox ---
     try:
-        plot_dict = read_pickle_from_dropbox(ticker_file)
+        plot_json = read_pickle_from_dropbox(ticker_file)
     except Exception as e:
         return html.Div(f"❌ Failed to load '{ticker}.pkl' from Dropbox: {e}")
     
-    # --- Convert plot_dict to DataFrame ---
+    # --- Parse JSON string into dictionary ---
     try:
-        if isinstance(plot_dict, str):
-            plot_dict = json.loads(plot_dict)
-        elif not isinstance(plot_dict, dict):
-            return html.Div("❌ 'plot_dict' is not a valid dictionary.")
-    
+        plot_dict = json.loads(plot_json)  # plot_dict is now a dict
         data = pd.DataFrame(plot_dict)
     
-        # --- Timeline logic (keep this!) ---
+        # --- Timeline logic ---
         if 'Date' in data.columns:
             data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
             data = data.dropna(subset=['Date']).sort_values('Date')
             data.set_index('Date', inplace=True)
+    
     except Exception as e:
         return html.Div(f"❌ Failed to parse plot_dict for ticker '{ticker}': {e}")
 
