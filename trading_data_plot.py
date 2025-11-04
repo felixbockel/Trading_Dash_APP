@@ -170,6 +170,10 @@ def load_pickle_from_button(n1, n2, n3, n4):
     if not file_path:
         return "❌ No Dropbox file path configured.", [], [], "", ""
 
+    print(f"Triggered ID: {triggered_id}")
+    print(f"Trying to read: {file_path}")
+
+    
     try:
         df = read_pickle_from_dropbox(file_path)
         uploaded_df = df.copy()
