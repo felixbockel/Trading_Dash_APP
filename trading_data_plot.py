@@ -206,55 +206,52 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type, last_loaded_key):
     if not n_clicks or not selected_rows or uploaded_df.empty:
         return html.Div("❗ Select a row to plot after loading data.")
 
-    # --- Get selected ticker ---
     row = uploaded_df.iloc[selected_rows[0]]
-    ticker = row.get('Ticker')
+    ticker = str(row.get('Ticker')).strip().upper()
     if not ticker:
         return html.Div("❌ Could not find 'Ticker' in selected row.")
 
-    # --- Determine folder based on last_loaded_key ---
+    # === Folder map ===
     incl_folder_map = {
-        "load-daily-swing": "/all_daily_swing_incl_plot/",
-        "load-weekly-swing": "/all_weekly_swing_incl_plot/",
-        "load-daily-positioning": "/all_daily_positioning_incl_plot/",
-        "load-weekly-positioning": "/all_weekly_positioning_incl_plot/",
+        "load-daily-swing": "/all_daily_swing_incl_plot",
+        "load-weekly-swing": "/all_weekly_swing_incl_plot",
+        "load-daily-positioning": "/all_daily_positioning_incl_plot",
+        "load-weekly-positioning": "/all_weekly_positioning_incl_plot",
     }
-    
+
     incl_folder = incl_folder_map.get(last_loaded_key)
     if not incl_folder:
         return html.Div("❌ Could not determine which incl_plot folder to load.")
-    
-    # --- Build the ticker-specific file path ---
-    ticker_file = f"{incl_folder}{ticker}.pkl"
-    
-    # --- Load ticker pickle from Dropbox ---
-    try:
-        plot_dict = read_pickle_from_dropbox(ticker_file)  # this returns a DataFrame or dict
-    except Exception as e:
-        return html.Div(f"❌ Failed to load '{ticker}.pkl' from Dropbox: {e}")
-    
-    # --- Convert to DataFrame if needed ---
-    try:
-        if isinstance(plot_dict, pd.DataFrame):
-            data = plot_dict.copy()
-        else:
-            data = pd.DataFrame(plot_dict)
-    
-        # --- Timeline logic ---
-        if 'Date' in data.columns:
-            data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
-            data = data.dropna(subset=['Date']).sort_values('Date')
-            data.set_index('Date', inplace=True)
-    
-    except Exception as e:
-        return html.Div(f"❌ Failed to parse plot_dict for ticker '{ticker}': {e}")
 
+    ticker_file = f"{incl_folder}/{ticker}.pkl"
 
-    # Normalize possible signal columns
+    print(f"🎯 Attempting to load {ticker_file} from Dropbox...")
+
+    try:
+        data = read_pickle_from_dropbox(ticker_file)
+        print(f"✅ Loaded {ticker}: shape {data.shape}")
+    except Exception as e:
+        return html.Div(f"❌ Failed to load '{ticker}.pkl' from Dropbox:<br>{e}")
+
+    # === Data cleanup ===
+    if 'Date' not in data.columns and isinstance(data.index, pd.DatetimeIndex):
+        data = data.reset_index().rename(columns={'index': 'Date'})
+    elif 'Date' in data.columns:
+        data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
+
+    data = data.dropna(subset=['Date']).sort_values('Date')
+    data.set_index('Date', inplace=True)
+
+    if data.empty:
+        return html.Div(f"⚠️ No data found in {ticker_file}")
+
+    # === Normalize signals (bool) ===
     for col in ['entry_buy_signal', 'entry_buy_signal2', 'trigger_sell_signal',
                 'is_earnings_date', 'is_earnings_warning']:
         if col in data.columns:
             data[col] = data[col].astype(bool)
+
+
 
     # --- Labels ---
     plot_mode = "Swing" if strategy_type == "swing" else "Positioning"
