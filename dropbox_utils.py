@@ -151,7 +151,3 @@ def read_and_unpack_ticker_pickle(path: str) -> pd.DataFrame:
 
     else:
         raise TypeError(f"Unexpected pickle content type: {type(df)}")
-
-
-    else:
-        raise TypeError(f"❌ Unsupported pickle type for {path}: {type(df)}")
