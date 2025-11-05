@@ -11,8 +11,7 @@ import io
 
 from dash import dash_table, callback, Dash, dcc, html, Input, Output, State, ctx, dash_table
 import dash_bootstrap_components as dbc
-from dropbox_utils import read_pickle_from_dropbox
-
+from dropbox_utils import read_pickle_from_dropbox, read_and_unpack_ticker_pickle
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
@@ -228,8 +227,9 @@ def plot_selected_row(n_clicks, selected_rows, strategy_type, last_loaded_key):
     print(f"🎯 Attempting to load {ticker_file} from Dropbox...")
 
     try:
-        data = read_pickle_from_dropbox(ticker_file)
-        print(f"✅ Loaded {ticker}: shape {data.shape}")
+        # Load and unpack if plot_dict present
+        data = read_and_unpack_ticker_pickle(ticker_file)
+        print(f"✅ Loaded and unpacked {ticker}: shape {data.shape}, columns={list(data.columns)}")
     except Exception as e:
         return html.Div(f"❌ Failed to load '{ticker}.pkl' from Dropbox:<br>{e}")
 
