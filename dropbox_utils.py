@@ -2,6 +2,8 @@ import os
 import io
 import dropbox
 import pandas as pd
+import json
+import ast
 
 DROPBOX_APP_NAME = "trading_data_plot"
 
@@ -97,3 +99,59 @@ def read_all_tickers_from_folder(strategy_folder: str) -> dict:
                 print(f"⚠️ Failed to load {ticker}: {e}")
     print(f"✅ Loaded {len(tickers_data)} ticker pickles from {strategy_folder}")
     return tickers_data
+
+def read_and_unpack_ticker_pickle(path: str) -> pd.DataFrame:
+    """
+    Read a single per-ticker pickle from Dropbox and unpack the 'plot_dict' JSON if present.
+
+    Handles these cases:
+    1. DataFrame with a 'plot_dict' column (1 row per ticker)
+    2. Direct dict (already a JSON-like structure)
+    3. DataFrame already containing time series data
+
+    Returns
+    -------
+    pd.DataFrame
+        Cleaned DataFrame ready for plotting (should contain a 'Date' column or datetime index)
+    """
+    df = read_pickle_from_dropbox(path)
+
+    # --- Case 1: DataFrame with 'plot_dict' column ---
+    if isinstance(df, pd.DataFrame) and 'plot_dict' in df.columns:
+        try:
+            raw_plot_dict = df.loc[0, 'plot_dict']
+            if isinstance(raw_plot_dict, str):
+                try:
+                    plot_data = json.loads(raw_plot_dict)
+                except json.JSONDecodeError:
+                    # Fallback to ast.literal_eval if JSON fails
+                    plot_data = ast.literal_eval(raw_plot_dict)
+            elif isinstance(raw_plot_dict, dict):
+                plot_data = raw_plot_dict
+            else:
+                raise TypeError(f"Unexpected plot_dict type: {type(raw_plot_dict)}")
+
+            unpacked_df = pd.DataFrame(plot_data)
+            print(f"✅ Unpacked 'plot_dict' from {path} → shape {unpacked_df.shape}")
+            return unpacked_df
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to unpack 'plot_dict' in {path}: {e}")
+
+    # --- Case 2: Direct dictionary ---
+    elif isinstance(df, dict):
+        unpacked_df = pd.DataFrame(df)
+        print(f"✅ Converted dict pickle from {path} → shape {unpacked_df.shape}")
+        return unpacked_df
+
+    # --- Case 3: Already a DataFrame with time series ---
+    elif isinstance(df, pd.DataFrame):
+        print(f"✅ Loaded time-series DataFrame from {path} → shape {df.shape}")
+        return df
+
+    else:
+        raise TypeError(f"Unexpected pickle content type: {type(df)}")
+
+
+    else:
+        raise TypeError(f"❌ Unsupported pickle type for {path}: {type(df)}")
