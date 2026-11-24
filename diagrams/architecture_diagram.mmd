@@ -1,0 +1,29 @@
+flowchart LR
+    subgraph Local["Local Windows processing environment"]
+        A["Scheduled service"]
+        B["Ticker universe"]
+        C1["Daily Swing"]
+        C2["Weekly Swing"]
+        C3["Daily Positioning"]
+        C4["Weekly Positioning"]
+        D["Per-ticker plot payloads"]
+        E["Combined analytical datasets"]
+        A --> B
+        B --> C1
+        B --> C2
+        B --> C3
+        B --> C4
+        C1 --> D
+        C2 --> D
+        C3 --> D
+        C4 --> D
+        C1 --> E
+        C2 --> E
+        C3 --> E
+        C4 --> E
+    end
+    D --> F[("Dropbox")]
+    E --> F
+    F --> G["Render-hosted Dash / Plotly app"]
+    G --> H["Interactive strategy tables"]
+    G --> I["Instrument charts and indicators"]
