@@ -137,7 +137,6 @@ The service implementation also has areas that merit further hardening, document
 - [Quantitative Strategies](docs/quantitative_strategies.md)
 - [System Architecture](docs/system_architecture.md)
 - [Development roadmap](docs/development_roadmap.md)
-- [Public repository review](PUBLIC_REPOSITORY_REVIEW.md)
 - [Licence considerations](LICENSE_CHOICE.md)
 
 ## Scope and limitations
