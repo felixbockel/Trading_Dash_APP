@@ -131,12 +131,12 @@ The service implementation also has areas that merit further hardening, document
 
 ## Documentation
 
-- [Automation and Deployment](automation_and_deployment.md)
-- [Dashboard Visualisation](dashboard_visualisation.md)
-- [Data Pipeline](data_pipeline.md)
-- [Quantitative Strategies](quantitative_strategies.md)
-- [System Architecture](system_architecture.md)
-- [Development roadmap](development_roadmap.md)
+- [Automation and Deployment](docs/automation_and_deployment.md)
+- [Dashboard Visualisation](docs/dashboard_visualisation.md)
+- [Data Pipeline](docs/data_pipeline.md)
+- [Quantitative Strategies](docs/quantitative_strategies.md)
+- [System Architecture](docs/system_architecture.md)
+- [Development roadmap](docs/development_roadmap.md)
 - [Public repository review](PUBLIC_REPOSITORY_REVIEW.md)
 - [Licence considerations](LICENSE_CHOICE.md)
 
